@@ -106,5 +106,23 @@ namespace N_m3u8DL_CLI
         [Option("chaCha20NonceBase64", HelpText = "ChaCha20NonceBase64")]
         public string ChaCha20NonceBase64 { get; set; }
 
+        [Option("enableAdDetect", HelpText = "启用广告分片检测与移除")]
+        public bool EnableAdDetect { get; set; }
+
+        [Option("adDetectOnly", HelpText = "仅检测广告分片并输出报告，不下载")]
+        public bool AdDetectOnly { get; set; }
+
+        [Option("adDetectThreshold", Default = 0.6, HelpText = "广告检测置信度阈值(0.0-1.0)，默认0.6")]
+        public double AdDetectThreshold { get; set; }
+
+        [Option("adDetectKeywords", HelpText = "自定义广告URL关键词(逗号分隔)")]
+        public string AdDetectKeywords { get; set; }
+
+        [Option("adDetectReport", HelpText = "输出广告检测报告文件路径")]
+        public string AdDetectReport { get; set; }
+
+        [Option("adDetectNoRemove", HelpText = "检测广告但不移除(用于预览)")]
+        public bool AdDetectNoRemove { get; set; }
+
     }
 }

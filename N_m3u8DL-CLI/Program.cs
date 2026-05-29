@@ -235,6 +235,19 @@ namespace N_m3u8DL_CLI.NetCore
                     Downloader.ChaCha20NonceBase64 = o.ChaCha20NonceBase64;
                 }
 
+                //AdDetect
+                if (o.EnableAdDetect || o.AdDetectOnly)
+                {
+                    Parser.EnableAdDetect = true;
+                    Parser.AdDetectOnly = o.AdDetectOnly;
+                    Parser.AdDetectThreshold = o.AdDetectThreshold;
+                    if (!string.IsNullOrEmpty(o.AdDetectKeywords))
+                        Parser.AdDetectKeywords = o.AdDetectKeywords;
+                    if (!string.IsNullOrEmpty(o.AdDetectReport))
+                        Parser.AdDetectReport = o.AdDetectReport;
+                    Parser.AdDetectNoRemove = o.AdDetectNoRemove;
+                }
+
                 //Proxy
                 if (!string.IsNullOrEmpty(o.ProxyAddress))
                 {

@@ -63,6 +63,13 @@ namespace N_m3u8DL_CLI
         public static int RangeEnd { get; set; } = -1;
         //是否自动清除优酷广告分片
         public static bool DelAd { get; set; } = true;
+        //广告检测功能
+        public static bool EnableAdDetect { get; set; } = false;
+        public static bool AdDetectOnly { get; set; } = false;
+        public static double AdDetectThreshold { get; set; } = 0.6;
+        public static string AdDetectKeywords { get; set; } = "";
+        public static string AdDetectReport { get; set; } = "";
+        public static bool AdDetectNoRemove { get; set; } = false;
         //存放Range信息，允许用户只下载部分视频
         public static string DurStart { get; set; } = "";
         public static string DurEnd { get; set; } = "";
@@ -99,6 +106,9 @@ namespace N_m3u8DL_CLI
             double totalDuration = 0;
             bool expectSegment = false, expectPlaylist = false, isIFramesOnly = false,
                 isIndependentSegments = false, isEndlist = false, isAd = false, isM3u = false;
+            //CUE标记追踪
+            bool isInCueOut = false;
+            double cueOutDuration = 0;
 
 
             //获取m3u8内容
@@ -333,9 +343,39 @@ namespace N_m3u8DL_CLI
                             segments = new JArray();
                         }
                     }
-                    else if (line.StartsWith(HLSTags.ext_x_cue_out)) ;
-                    else if (line.StartsWith(HLSTags.ext_x_cue_out_start)) ;
-                    else if (line.StartsWith(HLSTags.ext_x_cue_span)) ;
+                    else if (line.StartsWith(HLSTags.ext_x_cue_out))  // #EXT-X-CUE-OUT-CONT (continuation)
+                    {
+                        // CUE-OUT continuation, already in cue-out state
+                    }
+                    else if (line.StartsWith(HLSTags.ext_x_cue_out_start))  // #EXT-X-CUE-OUT (start)
+                    {
+                        isInCueOut = true;
+                        cueOutDuration = 0;
+                        // Parse duration: #EXT-X-CUE-OUT:DURATION=30 or #EXT-X-CUE-OUT:30
+                        string attr = line.Replace(HLSTags.ext_x_cue_out_start + ":", "").Trim();
+                        if (attr.StartsWith("DURATION="))
+                        {
+                            double dur;
+                            if (double.TryParse(attr.Replace("DURATION=", ""), out dur))
+                                cueOutDuration = dur;
+                        }
+                        else if (!string.IsNullOrEmpty(attr))
+                        {
+                            double dur;
+                            if (double.TryParse(attr, out dur))
+                                cueOutDuration = dur;
+                        }
+                    }
+                    else if (line.StartsWith(HLSTags.ext_x_cue_end))  // #EXT-X-CUE-IN (end)
+                    {
+                        isInCueOut = false;
+                        cueOutDuration = 0;
+                    }
+                    else if (line.StartsWith(HLSTags.ext_x_cue_span))  // #EXT-X-CUE-SPAN
+                    {
+                        // CUE-SPAN indicates this segment is part of a cue
+                        isInCueOut = true;
+                    }
                     else if (line.StartsWith(HLSTags.ext_x_version)) ;
                     else if (line.StartsWith(HLSTags.ext_x_allow_cache)) ;
                     //解析KEY
@@ -376,6 +416,10 @@ namespace N_m3u8DL_CLI
                         }
                         totalDuration += segDuration;
                         segInfo["duration"] = segDuration;
+                        //记录CUE标记信息
+                        segInfo["isInCueOut"] = isInCueOut;
+                        if (cueOutDuration > 0)
+                            segInfo["cueOutDuration"] = cueOutDuration;
                         expectSegment = true;
                         segIndex++;
                     }
@@ -787,6 +831,56 @@ namespace N_m3u8DL_CLI
                 parts = newParts;
                 jsonM3u8Info["count"] = newCount;
                 jsonM3u8Info["totalDuration"] = newTotalDuration;
+            }
+
+
+            //广告检测与移除
+            if (EnableAdDetect && parts.Count > 0)
+            {
+                LOGGER.PrintLine("开始广告分片检测...");
+                AdDetector detector = new AdDetector();
+                detector.Threshold = AdDetectThreshold;
+                detector.CustomKeywords = AdDetectKeywords;
+
+                var report = detector.Detect(parts);
+                AdDetector.PrintReport(report);
+
+                //输出报告文件
+                if (!string.IsNullOrEmpty(AdDetectReport))
+                {
+                    AdDetector.WriteReportToFile(report, AdDetectReport);
+                    LOGGER.PrintLine("广告检测报告已保存至: " + AdDetectReport);
+                }
+
+                //仅检测模式
+                if (AdDetectOnly)
+                {
+                    LOGGER.PrintLine("广告检测完成，程序退出。");
+                    Environment.Exit(0);
+                }
+
+                //移除广告分片
+                if (report.AdSegmentCount > 0 && !AdDetectNoRemove)
+                {
+                    parts = AdDetector.RemoveAdSegments(parts, report.AdSegmentIndices);
+                    int newCount = 0;
+                    double newTotalDuration = 0;
+                    foreach (JArray part in parts)
+                    {
+                        foreach (var seg in part)
+                        {
+                            newCount++;
+                            newTotalDuration += Convert.ToDouble(seg["duration"].ToString());
+                        }
+                    }
+                    jsonM3u8Info["count"] = newCount;
+                    jsonM3u8Info["totalDuration"] = newTotalDuration;
+                    LOGGER.PrintLine(string.Format("已移除 {0} 个广告分片，节省 {1:F1}s", report.AdSegmentCount, report.TotalAdDuration));
+                }
+                else if (report.AdSegmentCount > 0 && AdDetectNoRemove)
+                {
+                    LOGGER.PrintLine("广告检测完成(未移除，--adDetectNoRemove 已启用)。");
+                }
             }
 
 
